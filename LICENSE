@@ -1,15 +1,13 @@
-Copyright (c) 2025 Simon Lüthi
+Copyright (c) 2025 Simon Lüthi  
 All rights reserved.
 
-This software and all associated files are the intellectual property of Simon Lüthi.
+Dieses Projekt und der gesamte Quellcode sind urheberrechtlich geschützt nach Schweizer Recht (URG).  
+Ohne ausdrückliche schriftliche Genehmigung des Autors ist es untersagt,  
+diesen Code ganz oder teilweise zu kopieren, zu verändern, zu verbreiten oder zu veröffentlichen.
 
-Unauthorized copying, modification, distribution, or use of this code, in whole or in part,
-is strictly prohibited without the express written permission of the author.
+Die Nutzung von GitHub Copilot oder ähnlichen KI-Tools ist innerhalb dieses Repositories erlaubt,  
+sofern dies ausschließlich der persönlichen Entwicklung dient.  
+Eine öffentliche oder kommerzielle Nutzung ohne Zustimmung des Autors ist verboten.
 
-Permission is hereby granted to use GitHub Copilot or other AI-assisted tools for code
-suggestions **only** for personal development purposes within this repository.  
-Any public redistribution, commercial use, or incorporation into other projects without
-prior consent is not allowed.
-
-For inquiries regarding licensing, contact:
+Kontakt für Nutzungserlaubnis:
 simon.luethi@edu.tbz.ch
