@@ -19,16 +19,22 @@ if ($IsAdmin) {
         New-Item -ItemType Directory -Path $PythonDir -Force
     }
 
-    # Download the latest Python installer (assuming 64-bit Windows)
-    $PythonUrl = "https://www.python.org/ftp/python/3.11.5/python-3.11.5-amd64.exe"  # Update to latest version as needed
-    $InstallerPath = Join-Path $env:TEMP "python-installer.exe"
-    Invoke-WebRequest -Uri $PythonUrl -OutFile $InstallerPath
+    # Check if Python is already installed in the target directory
+    $PythonExePath = Join-Path $PythonDir "python.exe"
+    if (Test-Path $PythonExePath) {
+        [System.Windows.Forms.MessageBox]::Show("Python ist bereits installiert.", "Installation Check", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+    } else {
+        # Download the latest Python installer (assuming 64-bit Windows)
+        $PythonUrl = "https://www.python.org/ftp/python/3.11.5/python-3.11.5-amd64.exe"  # Update to latest version as needed
+        $InstallerPath = Join-Path $env:TEMP "python-installer.exe"
+        Invoke-WebRequest -Uri $PythonUrl -OutFile $InstallerPath
 
-    # Install Python silently to the specified directory
-    Start-Process -FilePath $InstallerPath -ArgumentList "/quiet InstallAllUsers=0 Include_launcher=0 Include_test=0 SimpleInstall=1 TargetDir=`"$PythonDir`"" -Wait
+        # Install Python silently to the specified directory
+        Start-Process -FilePath $InstallerPath -ArgumentList "/quiet InstallAllUsers=0 Include_launcher=0 Include_test=0 SimpleInstall=1 TargetDir=`"$PythonDir`"" -Wait
 
-    # Clean up installer
-    Remove-Item $InstallerPath
+        # Clean up installer
+        Remove-Item $InstallerPath
+    }
 } else {
     [System.Windows.Forms.MessageBox]::Show("Der Script wird nicht als Administrator ausgeführt. Es wird geschlossen.", "Admin Check", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
 }

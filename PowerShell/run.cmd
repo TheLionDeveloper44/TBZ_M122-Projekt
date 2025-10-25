@@ -6,7 +6,7 @@ net session >nul 2>&1
 if %errorLevel% == 0 (
     goto :admin
 ) else (
-    echo Requesting administrative privileges...
+    echo Anforderung von Administratorrechten...
     powershell "start-process '%~f0' -verb runas"
     exit /b
 )
