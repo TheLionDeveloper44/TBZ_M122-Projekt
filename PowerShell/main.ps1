@@ -73,8 +73,9 @@ if ($IsAdmin) {
         $StatusLabel.Text = "Python is already installed."
         $Form.Refresh()
         Start-Sleep -Seconds 2  # Brief pause to show completion
-        $Form.Close()
+        # Removed $Form.Close() to allow continuation for package installation
         [System.Windows.Forms.MessageBox]::Show("Python ist bereits installiert.", "Installation Check", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+        # Continue to package installation
     } else {
         # Create Python directory if it doesn't exist
         if (!(Test-Path $PythonDir)) {
@@ -99,6 +100,13 @@ if ($IsAdmin) {
         # Install Python silently to the specified directory
         Start-Process -FilePath $InstallerPath -ArgumentList "/quiet InstallAllUsers=0 Include_launcher=0 Include_test=0 SimpleInstall=1 TargetDir=`"$PythonDir`"" -Wait
 
+        # Set file associations for Python files
+        $PythonwExePath = Join-Path $PythonDir "pythonw.exe"
+        cmd /c "assoc .py=Python.File"
+        cmd /c "ftype Python.File=`"$PythonExePath`" `"%1`" %*"
+        cmd /c "assoc .pyw=Python.NoConsole"
+        cmd /c "ftype Python.NoConsole=`"$PythonwExePath`" `"%1`" %*"
+
         # Update progress: Cleaning up
         $ProgressBar.Value = 80
         $StatusLabel.Text = "Cleaning up..."
@@ -106,14 +114,35 @@ if ($IsAdmin) {
 
         # Clean up installer
         Remove-Item $InstallerPath
-
-        # Update progress: Completed
-        $ProgressBar.Value = 100
-        $StatusLabel.Text = "Installation completed."
-        $Form.Refresh()
-        Start-Sleep -Seconds 2  # Brief pause to show completion
-        $Form.Close()
     }
+
+    # Create Modules directory (for both cases)
+    $ModulesDir = Join-Path $ApplicationsDir "Modules"
+    if (!(Test-Path $ModulesDir)) {
+        New-Item -ItemType Directory -Path $ModulesDir -Force
+    }
+
+    # Create PyQt directory
+    $PyQtDir = Join-Path $ModulesDir "PyQt"
+    if (!(Test-Path $PyQtDir)) {
+        New-Item -ItemType Directory -Path $PyQtDir -Force
+    }
+
+    # Update progress: Installing PyQt/PySide6 (for already installed case)
+    $ProgressBar.Value = 85
+    $StatusLabel.Text = "Installing PyQt/PySide6..."
+    $Form.Refresh()
+
+    # Upgrade pip and install PySide6 into PyQt directory
+    & $PythonExePath -m pip install --upgrade pip
+    & $PythonExePath -m pip install PySide6 --target $PyQtDir
+
+    # Update progress: Completed
+    $ProgressBar.Value = 100
+    $StatusLabel.Text = "Installation completed."
+    $Form.Refresh()
+    Start-Sleep -Seconds 2  # Brief pause to show completion
+    $Form.Close()
 } else {
     [System.Windows.Forms.MessageBox]::Show("Der Script wird nicht als Administrator ausgeführt. Es wird geschlossen.", "Admin Check", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
 }

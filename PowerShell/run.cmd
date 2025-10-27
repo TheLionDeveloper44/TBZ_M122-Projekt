@@ -14,5 +14,4 @@ if %errorLevel% == 0 (
 :admin
 set "SCRIPT_DIR=%~dp0"
 powershell -NoProfile -ExecutionPolicy Bypass -STA -File "%SCRIPT_DIR%main.ps1" %*
-pause
 exit /b %ERRORLEVEL%
