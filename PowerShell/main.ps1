@@ -1,55 +1,64 @@
+# Author: TheLionDeveloper44
+# Dieses Skript unterliegt der Lizenz, die in der LICENSE-Datei im Stammverzeichnis dieses Repositories enthalten ist.
+# Ohne ausdrückliche schriftliche Genehmigung ist es untersagt, dieses Skript zu kopieren, zu modifizieren oder zu verbreiten.
+
 # Check if running as administrator
 $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 # Load Windows Forms assembly
 Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+$ScriptPath = $MyInvocation.MyCommand.Path
+if ([string]::IsNullOrWhiteSpace($ScriptPath)) {
+    $ScriptDir = (Get-Location).Path
+} else {
+    $ScriptDir = Split-Path -Parent $ScriptPath
+}
+$LogFile = Join-Path $ScriptDir "log.txt"
+
+function Write-Log {
+    param([string]$Message)
+    if ([string]::IsNullOrWhiteSpace($Message)) { return }
+    $entry = "[{0}] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message
+    try {
+        Add-Content -Path $LogFile -Value $entry -Encoding UTF8
+    } catch {
+        Write-Warning "Unable to write to log file: $($_.Exception.Message)"
+    }
+}
+
+# --- Removed local UI helpers and inline UI creation. Load external UI runner instead ---
+# Load UI module (separated UI code)
+. "$ScriptDir\ui_runner.ps1"
+
+Write-Log "----- Installer run started. Admin rights: $IsAdmin -----"
 
 # Check Internet availability
 $InternetTestUri = "https://www.google.com"
 $InternetAvailable = $true
+Write-Log "Checking internet connectivity via $InternetTestUri"
 try {
     $request = [System.Net.WebRequest]::Create($InternetTestUri)
     $request.Method = "HEAD"
     $request.Timeout = 5000
     $response = $request.GetResponse()
     $response.Close()
+    Write-Log "Internet connectivity confirmed."
 } catch {
     $InternetAvailable = $false
+    Write-Log "No internet connection detected. Installation aborted."
 }
 if (-not $InternetAvailable) {
     [System.Windows.Forms.MessageBox]::Show("Keine Internetverbindung. Installation wird beendet.", "Internet Check", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+    Write-Log "Exiting because no internet connection is available."
     exit
 }
 
 if ($IsAdmin) {
-    # Create loading screen form
-    $Form = New-Object System.Windows.Forms.Form
-    $Form.Text = "Installation Progress"
-    $Form.Size = New-Object System.Drawing.Size(400, 150)
-    $Form.StartPosition = "CenterScreen"
-    $Form.FormBorderStyle = "FixedDialog"
-    $Form.ControlBox = $false  # Disable close button
-
-    $ProgressBar = New-Object System.Windows.Forms.ProgressBar
-    $ProgressBar.Location = New-Object System.Drawing.Point(20, 50)
-    $ProgressBar.Size = New-Object System.Drawing.Size(350, 20)
-    $ProgressBar.Minimum = 0
-    $ProgressBar.Maximum = 100
-    $Form.Controls.Add($ProgressBar)
-
-    $StatusLabel = New-Object System.Windows.Forms.Label
-    $StatusLabel.Location = New-Object System.Drawing.Point(20, 20)
-    $StatusLabel.Size = New-Object System.Drawing.Size(350, 20)
-    $StatusLabel.Text = "Starting..."
-    $Form.Controls.Add($StatusLabel)
-
-    $Form.Show()
-    $Form.Refresh()
-
-    # Update progress: Checking for system-wide Scoop installation
-    $ProgressBar.Value = 15
-    $StatusLabel.Text = "Checking for system-wide Scoop installation..."
-    $Form.Refresh()
+    Write-Log "Launching enhanced installation UI."
+    Start-InstallUI -Title "InstallCraft - The Ultimate Installer"
+    Update-Ui -Progress 5 -Message "Initialising Oberfläche"
 
     # Get the script directory and set paths
     $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -59,9 +68,11 @@ if ($IsAdmin) {
 
     # Create Applications directory if it doesn't exist
     if (!(Test-Path $ApplicationsDir)) {
-        New-Item -ItemType Directory -Path $ApplicationsDir -Force
+        New-Item -ItemType Directory -Path $ApplicationsDir -Force | Out-Null
+        Write-Log "Created Applications directory at $ApplicationsDir"
+    } else {
+        Write-Log "Applications directory already present at $ApplicationsDir"
     }
-
     $ScoopDir = Join-Path $ApplicationsDir "Scoop"
 
     # Check if Scoop is already installed by running the command
@@ -75,34 +86,20 @@ if ($IsAdmin) {
         $ScoopInstalled = $false
     }
 
+    Update-Ui -Progress 15 -Message "Checking for system-wide Scoop installation"
     if ($ScoopInstalled) {
-        # Scoop is already installed
-        $ProgressBar.Value = 100
-        $StatusLabel.Text = "Scoop is already installed."
-        $Form.Refresh()
+        Update-Ui -Progress 100 -Message "Scoop is already installed."
         Start-Sleep -Seconds 1
-        $ProgressBar.Value = 0
-        $StatusLabel.Text = "Starting Python installation..."
-        $Form.Refresh()
+        Update-Ui -Progress 0 -Message "Starting Python installation"
     } else {
-        # Update progress: Installing Scoop
-        $ProgressBar.Value = 50
-        $StatusLabel.Text = "Installing Scoop..."
-        $Form.Refresh()
-        Start-Sleep -Seconds 3
-
-        # Install Scoop
+        Update-Ui -Progress 50 -Message "Installing Scoop"
+        Write-Log "Running Scoop installer at $ScoopDir"
         irm get.scoop.sh -outfile 'scoop_installer.ps1'
+        Invoke-UiPump
         .\scoop_installer.ps1 -ScoopDir $ScoopDir -ScoopGlobalDir 'C:\GlobalScoopApps' -RunAsAdmin
-
-        # Set progress to 100% after Scoop installation with a brief pause, then reset to 0% for Python phase
-        $ProgressBar.Value = 100
-        $StatusLabel.Text = "Scoop installed successfully."
-        $Form.Refresh()
+        Update-Ui -Progress 100 -Message "Scoop installed successfully."
         Start-Sleep -Seconds 3
-        $ProgressBar.Value = 0
-        $StatusLabel.Text = "Starting Python installation..."
-        $Form.Refresh()
+        Update-Ui -Progress 0 -Message "Starting Python installation"
     }
 
     # Ensure Git is available for Scoop buckets
@@ -117,18 +114,16 @@ if ($IsAdmin) {
     }
 
     if (-not $GitInstalled) {
-        $ProgressBar.Value = 5
-        $StatusLabel.Text = "Installing Git with Scoop..."
-        $Form.Refresh()
+        Update-Ui -Progress 5 -Message "Installing Git with Scoop"
+        Invoke-UiPump
         & scoop install git
+        Write-Log "Git installation finished with exit code $LASTEXITCODE."
         Start-Sleep -Seconds 1
+    } else {
+        Write-Log "Git already available for Scoop buckets."
     }
 
-    # Update progress: Checking Python installation (reset scale)
-    $ProgressBar.Value = 10
-    $StatusLabel.Text = "Checking Python installation..."
-    $Form.Refresh()
-
+    Update-Ui -Progress 10 -Message "Checking Python installation"
     $PythonInstalled = $false
     $PythonExePath = $null
     [version]$PythonVersion = $null
@@ -145,102 +140,109 @@ if ($IsAdmin) {
         $PythonInstalled = $false
     }
 
+    if ($PythonInstalled -and $PythonVersion) {
+        Write-Log "Detected Python $PythonVersion at $PythonExePath"
+    }
     if ($PythonInstalled -and $PythonVersion -and ($PythonVersion -lt [version]"3.9" -or $PythonVersion -ge [version]"3.13")) {
-        $ProgressBar.Value = 20
-        $StatusLabel.Text = "Detected Python $PythonVersion incompatible. Installing Python 3.12..."
-        $Form.Refresh()
+        Update-Ui -Progress 20 -Message "Detected Python $PythonVersion incompatible. Installing Python 3.12"
         Start-Sleep -Seconds 1
         $PythonInstalled = $false
         $PythonExePath = $null
     }
 
     if ($PythonInstalled) {
-        $ProgressBar.Value = 100
-        $StatusLabel.Text = "Python is already installed."
-        $Form.Refresh()
+        Update-Ui -Progress 100 -Message "Python is already installed."
         Start-Sleep -Seconds 2
         [System.Windows.Forms.MessageBox]::Show("Python ist bereits installiert.", "Installation Check", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
     } else {
-        $ProgressBar.Value = 40
-        $StatusLabel.Text = "Installing Python 3.12 with Scoop..."
-        $Form.Refresh()
-
+        Update-Ui -Progress 40 -Message "Installing Python 3.12 with Scoop"
         $bucketList = & scoop bucket list 2>$null
         if (-not ($bucketList -match 'versions')) {
+            Write-Log "Adding Scoop 'versions' bucket."
             & scoop bucket add versions | Out-Null
         }
-
         & scoop install python312
+        Write-Log "Python 3.12 installation finished with exit code $LASTEXITCODE."
 
         $PythonPrefix = (& scoop prefix python312 2>$null).Trim()
         if (-not $PythonPrefix) {
+            Write-Log "Unable to determine Scoop prefix for python312."
             throw "Unable to determine Scoop prefix for python312."
         }
+        Write-Log "Determined Scoop prefix for python312: $PythonPrefix"
 
         $PythonExePath = Join-Path $PythonPrefix "python.exe"
         $PythonDirPath = Split-Path $PythonExePath
+        Write-Log "Python executable resolved at $PythonExePath"
 
         $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
         if ([string]::IsNullOrWhiteSpace($userPath)) {
             [Environment]::SetEnvironmentVariable("PATH", $PythonDirPath, "User")
+            Write-Log "User PATH initialised with $PythonDirPath"
         } elseif (-not (($userPath -split ';') -contains $PythonDirPath)) {
             [Environment]::SetEnvironmentVariable("PATH", $userPath.TrimEnd(';') + ';' + $PythonDirPath, "User")
+            Write-Log "User PATH augmented with $PythonDirPath"
         }
         if (-not (($env:PATH -split ';') -contains $PythonDirPath)) {
             $env:PATH = "$env:PATH;$PythonDirPath"
+            Write-Log "Session PATH augmented with $PythonDirPath"
         }
 
-        $ProgressBar.Value = 70
-        $StatusLabel.Text = "Registering Python with Windows..."
-        $Form.Refresh()
-
+        Update-Ui -Progress 70 -Message "Registering Python with Windows"
         $Pep514RegPath = Join-Path $PythonPrefix "install-pep-514.reg"
         try {
             if (Test-Path $Pep514RegPath) {
                 Start-Process -FilePath reg.exe -ArgumentList "import `"$Pep514RegPath`"" -Wait -NoNewWindow
+                Write-Log "PEP 514 registration imported from $Pep514RegPath"
             } else {
                 Write-Warning "PEP 514 registration file not found at $Pep514RegPath."
+                Write-Log "PEP 514 registration file not found at $Pep514RegPath."
             }
         } catch {
             Write-Warning "Failed to register Python: $($_.Exception.Message)"
+            Write-Log "Failed to register Python: $($_.Exception.Message)"
         }
 
-        $ProgressBar.Value = 80
-        $StatusLabel.Text = "Cleaning up..."
-        $Form.Refresh()
-        Read-Host "Press Enter to continue with PyQt installation"
+        Update-Ui -Progress 80 -Message "Cleaning up before PyQt installation"
+        Start-Sleep -Seconds 2
     }
 
     # Create Modules directory (for both cases)
     $ModulesDir = Join-Path $ApplicationsDir "Modules"
     if (!(Test-Path $ModulesDir)) {
-        New-Item -ItemType Directory -Path $ModulesDir -Force
+        New-Item -ItemType Directory -Path $ModulesDir -Force | Out-Null
+        Write-Log "Created Modules directory at $ModulesDir"
+    } else {
+        Write-Log "Modules directory already present at $ModulesDir"
     }
 
     # Create PyQt directory
     $PyQtDir = Join-Path $ModulesDir "PyQt"
     if (!(Test-Path $PyQtDir)) {
-        New-Item -ItemType Directory -Path $PyQtDir -Force
+        New-Item -ItemType Directory -Path $PyQtDir -Force | Out-Null
+        Write-Log "Created PyQt directory at $PyQtDir"
+    } else {
+        Write-Log "PyQt directory already present at $PyQtDir"
     }
 
-    # Update progress: Installing PyQt/PySide6 (for already installed case)
-    $ProgressBar.Value = 85
-    $StatusLabel.Text = "Installing PyQt/PySide6..."
-    $Form.Refresh()
-
-    # Upgrade pip and install PySide6 into PyQt directory
+    Update-Ui -Progress 85 -Message "Installing PyQt/PySide6..."
+    Invoke-UiPump
     & $PythonExePath -m pip install --upgrade pip
+    Write-Log "pip upgraded via $PythonExePath"
     & $PythonExePath -m pip install PySide6 --target $PyQtDir
+    Write-Log "PySide6 installed into $PyQtDir"
 
-    # Update progress: Completed
-    $ProgressBar.Value = 100
-    $StatusLabel.Text = "Installation completed."
-    $Form.Refresh()
-    Start-Sleep -Seconds 2  # Brief pause to show completion
-    $Form.Close()
+    Update-Ui -Progress 100 -Message "Installation completed."
+    Start-Sleep -Seconds 2
+
+    # ensure UI stopped and disposed
+    Stop-InstallUI
+    Write-Log "Installation UI closed."
 } else {
+    Write-Log "Script not executed as administrator. Showing warning dialog."
     [System.Windows.Forms.MessageBox]::Show("Der Script wird nicht als Administrator ausgeführt. Es wird geschlossen.", "Admin Check", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
 }
 
-# Pause to allow viewing of error messages
+Write-Log "Awaiting final exit confirmation."
 Read-Host "Press Enter to exit"
+Write-Log "----- Installer run finished -----"
