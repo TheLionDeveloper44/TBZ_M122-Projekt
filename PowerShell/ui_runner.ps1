@@ -21,10 +21,12 @@ function Start-InstallUI {
     )
     if ($script:UiHost) { return }
     $queue = [System.Collections.Concurrent.ConcurrentQueue[System.Collections.Hashtable]]::new()
+    $readyEvent = [System.Threading.ManualResetEventSlim]::new($false)
     $script:UiHost = @{
-        Queue = $queue
-        Title = $Title
+        Queue     = $queue
+        Title     = $Title
         MediaRoot = $MediaRoot
+        ReadyEvent = $readyEvent
     }
     try {
         $runspace = [runspacefactory]::CreateRunspace()
@@ -38,12 +40,13 @@ function Start-InstallUI {
         $runspace.SessionStateProxy.SetVariable("UiTitle", $Title)
         $runspace.SessionStateProxy.SetVariable("UiRunnerPath", $script:UiModulePath)
         $runspace.SessionStateProxy.SetVariable("UiMediaRoot", $MediaRoot)
+        $runspace.SessionStateProxy.SetVariable("UiReadySignal", $readyEvent)
 
         $ps = [PowerShell]::Create()
         $ps.Runspace = $runspace
         $ps.AddScript({
             . $UiRunnerPath
-            Start-UiCore -Queue $UiQueue -Title $UiTitle -MediaRoot $UiMediaRoot
+            Start-UiCore -Queue $UiQueue -Title $UiTitle -MediaRoot $UiMediaRoot -ReadySignal $UiReadySignal
         }) | Out-Null
 
         $async = $ps.BeginInvoke()
@@ -54,6 +57,12 @@ function Start-InstallUI {
         Stop-InstallUI
         throw
     }
+}
+
+function Wait-InstallUiReady {
+    param([int]$TimeoutMs = 10000)
+    if (-not $script:UiHost -or -not $script:UiHost.ReadyEvent) { return $false }
+    return $script:UiHost.ReadyEvent.Wait($TimeoutMs)
 }
 
 function Update-Ui {
@@ -88,6 +97,9 @@ function Stop-InstallUI {
         $script:UiHost.Runspace.Close()
         $script:UiHost.Runspace.Dispose()
     }
+    if ($script:UiHost.ReadyEvent) {
+        $script:UiHost.ReadyEvent.Dispose()
+    }
     $script:UiHost = $null
 }
 
@@ -95,7 +107,8 @@ function Start-UiCore {
     param(
         [System.Collections.Concurrent.ConcurrentQueue[System.Collections.Hashtable]]$Queue,
         [string]$Title,
-        [string]$MediaRoot
+        [string]$MediaRoot,
+        [System.Threading.ManualResetEventSlim]$ReadySignal
     )
 
     Add-Type -AssemblyName System.Windows.Forms
@@ -540,6 +553,9 @@ function Start-UiCore {
     [System.Windows.Forms.Application]::Run($Form)
     if ($Form -and -not $Form.IsDisposed) {
         $Form.Dispose()
+    }
+    if ($ReadySignal -and -not $ReadySignal.IsSet) {
+        $ReadySignal.Set()
     }
     $script:UiState = $null
 }

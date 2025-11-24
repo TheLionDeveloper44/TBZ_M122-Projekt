@@ -28,9 +28,34 @@ function Write-Log {
     }
 }
 
-# --- Removed local UI helpers and inline UI creation. Load external UI runner instead ---
 # Load UI module (separated UI code)
 . "$ScriptDir\ui_runner.ps1"
+
+function Show-UiStartupSplash {
+    param([string]$Message = "InstallCraft UI wird initialisiert...")
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "InstallCraft"
+    $form.Size = New-Object System.Drawing.Size(320, 140)
+    $form.StartPosition = 'CenterScreen'
+    $form.FormBorderStyle = 'FixedToolWindow'
+    $form.ControlBox = $false
+    $form.TopMost = $true
+    $label = New-Object System.Windows.Forms.Label
+    $label.Dock = 'Fill'
+    $label.TextAlign = 'MiddleCenter'
+    $label.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Regular)
+    $label.Text = $Message
+    $form.Controls.Add($label)
+    $form.Show()
+    [System.Windows.Forms.Application]::DoEvents()
+    return $form
+}
+function Close-UiStartupSplash {
+    param([System.Windows.Forms.Form]$Form)
+    if (-not $Form -or $Form.IsDisposed) { return }
+    try { $Form.Close() } catch {}
+    $Form.Dispose()
+}
 
 Write-Log "----- Installer run started. Admin rights: $IsAdmin -----"
 
@@ -64,7 +89,13 @@ if ($IsAdmin) {
         Write-Log "MuSoLIB audio directory missing at $MuSoLibDir"
         $MuSoLibDir = $null
     }
-    Start-InstallUI -Title "InstallCraft - The Ultimate Installer" -MediaRoot $MuSoLibDir
+    $splashForm = Show-UiStartupSplash -Message "InstallCraft UI wird initialisiert..."
+    try {
+        Start-InstallUI -Title "InstallCraft - The Ultimate Installer" -MediaRoot $MuSoLibDir
+        Wait-InstallUiReady -TimeoutMs 15000 | Out-Null
+    } finally {
+        Close-UiStartupSplash -Form $splashForm
+    }
     Update-Ui -Progress 5 -Message "Initialising Oberfläche"
 
     # Get the script directory and set paths
