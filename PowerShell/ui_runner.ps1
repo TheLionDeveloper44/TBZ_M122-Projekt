@@ -4,7 +4,7 @@
 
 # Dieses Skript implementiert ein kompliziertes UI für Installationsprozesse.
 # Dieses UI/GUI ist "völlig" Modular und kann in verschiedenen Installationsszenarien wiederverwendet werden.
-# Es muss umgehend mit main.ps1 ausgeführt werden.
+# Es ist trotzdem so gestaltet, dass es grundsätzlich nur mit main.ps1, ausser man weiss, welche Variablen und Funktionen zu setzen und aufzurufen sind.
 
 if (-not $script:UiModulePath) {
     $script:UiModulePath = $PSCommandPath
@@ -221,6 +221,32 @@ function Start-UiCore {
     $MuteButton.Text = "Mute audio"
     $Form.Controls.Add($MuteButton)
 
+    $NowPlayingLabel = New-Object System.Windows.Forms.Label
+    $NowPlayingLabel.Location = New-Object System.Drawing.Point(24, 290)
+    $NowPlayingLabel.Size = New-Object System.Drawing.Size(360, 20)
+    $NowPlayingLabel.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $NowPlayingLabel.ForeColor = [System.Drawing.Color]::Gainsboro
+    $NowPlayingLabel.BackColor = [System.Drawing.Color]::Transparent
+    $Form.Controls.Add($NowPlayingLabel)
+
+    $script:UiNowPlayingOverride = $null
+    $setNowPlaying = {
+        param([string]$Override)
+        if (-not $NowPlayingLabel) { return }
+        if ($PSBoundParameters.ContainsKey('Override')) { $script:UiNowPlayingOverride = $Override }
+        $text = '—'
+        if ($script:UiAudioState -and $script:UiAudioState.DisplayTrack) {
+            $script:UiNowPlayingOverride = $null
+            $text = $script:UiAudioState.DisplayTrack
+        } elseif ($script:UiNowPlayingOverride) {
+            $text = $script:UiNowPlayingOverride
+        }
+        $mutedSuffix = ''
+        if ($script:UiAudioState -and $script:UiAudioState.IsMuted) { $mutedSuffix = ' (muted)' }
+        $NowPlayingLabel.Text = ("Now playing: {0}{1}" -f $text, $mutedSuffix)
+    }
+    & $setNowPlaying
+
     $script:IntroOverlay = @{
         Alpha = 255
         DelayMs = 800
@@ -310,11 +336,13 @@ function Start-UiCore {
             $script:UiAudioState.Controller.URL = $nextTrack
             $script:UiAudioState.Controller.controls.play()
             $script:UiAudioState.CurrentTrack = 'Music'
+            $script:UiAudioState.DisplayTrack = [System.IO.Path]::GetFileNameWithoutExtension($nextTrack)
             $script:UiAudioState.LoopEngaged = $true
             $script:UiAudioState.LastPlayState = $null
             if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
                 Write-Log ("Now playing {0}" -f (Split-Path -Leaf $nextTrack))
             }
+            & $setNowPlaying
         } catch {
             if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
                 Write-Log ("Failed to start {0}: {1}" -f $nextTrack, $_.Exception.Message)
@@ -330,6 +358,7 @@ function Start-UiCore {
             $script:UiAudioState.Controller = $null
         }
         $script:UiAudioState = $null
+        & $setNowPlaying 'Audio stopped'
         if ($MuteButton) {
             $MuteButton.Enabled = $false
             $MuteButton.Text = "Audio stopped"
@@ -361,6 +390,7 @@ function Start-UiCore {
                     IntroPath = $introPath
                     MusicTracks = $musicTracks
                     CurrentTrack = 'Intro'
+                    DisplayTrack = [System.IO.Path]::GetFileNameWithoutExtension($introPath)
                     IsMuted = $false
                     LoopEngaged = $false
                     MediaRoot = $MediaRoot
@@ -369,12 +399,20 @@ function Start-UiCore {
                     LastPlayState = $null
                 }
                 $controller.controls.play()
+                & $setNowPlaying
             } catch {
                 $script:UiAudioState = $null
+                & $setNowPlaying 'Audio unavailable'
             }
         } elseif (Get-Command Write-Log -ErrorAction SilentlyContinue) {
             Write-Log "MuSoLIB assets missing in $MediaRoot"
+            & $setNowPlaying 'Audio unavailable'
         }
+    } else {
+        $MuteButton.Enabled = $false
+        $MuteButton.Text = "Audio unavailable"
+        & $setNowPlaying 'Audio unavailable'
+        if ($script:IntroOverlay) { $script:IntroOverlay.RequireLoop = $false }
     }
 
     $audioTerminalStates = 0,1,8,10
@@ -401,6 +439,7 @@ function Start-UiCore {
     } else {
         $MuteButton.Enabled = $false
         $MuteButton.Text = "Audio unavailable"
+        & $setNowPlaying 'Audio unavailable'
         if ($script:IntroOverlay) { $script:IntroOverlay.RequireLoop = $false }
     }
 
@@ -412,6 +451,7 @@ function Start-UiCore {
             $script:UiAudioState.Controller.controls.play()
         }
         $MuteButton.Text = $(if ($script:UiAudioState.IsMuted) { "Unmute audio" } else { "Mute audio" })
+        & $setNowPlaying
     })
     $SpinnerStates = @('|','/','-','\')
     $ActionHistoryLimit = 200
