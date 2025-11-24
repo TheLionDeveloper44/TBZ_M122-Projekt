@@ -8,7 +8,7 @@ if %errorLevel% == 0 (
     goto :admin
 ) else (
     echo Anforderung von Administratorrechten...
-    powershell -NoProfile -Command "try { Start-Process -FilePath '%~f0' -Verb RunAs } catch { Start-Process -WindowStyle Hidden -FilePath 'powershell.exe' -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','%SCRIPT_DIR%run_ui-failed.ps1'; exit 1 }"
+    powershell -NoProfile -Command "try { Start-Process -FilePath 'cmd.exe' -ArgumentList '/c','\"\"%~f0\"\" %*' -Verb RunAs } catch { Start-Process -WindowStyle Hidden -FilePath 'powershell.exe' -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','%SCRIPT_DIR%run_ui-failed.ps1'; exit 1 }"
     if errorlevel 1 exit /b %errorlevel%
     exit /b
 )
