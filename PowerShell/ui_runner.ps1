@@ -2,7 +2,8 @@
 # Dieses Skript unterliegt der Lizenz, die in der LICENSE-Datei im Stammverzeichnis dieses Repositories enthalten ist.
 # Ohne ausdrückliche schriftliche Genehmigung ist es untersagt, dieses Skript zu kopieren, zu modifizieren oder zu verbreiten.
 
-# Dieses Skript implementiert eine einfache UI-Schleife für Installationsprozesse.
+# Dieses Skript implementiert ein kompliziertes UI für Installationsprozesse.
+# Dieses UI/GUI ist "völlig" Modular und kann in verschiedenen Installationsszenarien wiederverwendet werden.
 # Es muss umgehend mit main.ps1 ausgeführt werden.
 
 if (-not $script:UiModulePath) {
@@ -14,12 +15,16 @@ $script:UiState = $null
 function Invoke-UiPump { return }
 
 function Start-InstallUI {
-    param([string]$Title = "Installer")
+    param(
+        [string]$Title = "Installer",
+        [string]$MediaRoot
+    )
     if ($script:UiHost) { return }
     $queue = [System.Collections.Concurrent.ConcurrentQueue[System.Collections.Hashtable]]::new()
     $script:UiHost = @{
         Queue = $queue
         Title = $Title
+        MediaRoot = $MediaRoot
     }
     try {
         $runspace = [runspacefactory]::CreateRunspace()
@@ -32,12 +37,13 @@ function Start-InstallUI {
         $runspace.SessionStateProxy.SetVariable("UiQueue", $queue)
         $runspace.SessionStateProxy.SetVariable("UiTitle", $Title)
         $runspace.SessionStateProxy.SetVariable("UiRunnerPath", $script:UiModulePath)
+        $runspace.SessionStateProxy.SetVariable("UiMediaRoot", $MediaRoot)
 
         $ps = [PowerShell]::Create()
         $ps.Runspace = $runspace
         $ps.AddScript({
             . $UiRunnerPath
-            Start-UiCore -Queue $UiQueue -Title $UiTitle
+            Start-UiCore -Queue $UiQueue -Title $UiTitle -MediaRoot $UiMediaRoot
         }) | Out-Null
 
         $async = $ps.BeginInvoke()
@@ -53,7 +59,8 @@ function Start-InstallUI {
 function Update-Ui {
     param(
         [int]$Progress = -1,
-        [string]$Message
+        [string]$Message,
+        [string]$Command
     )
     if ($Message -and (Get-Command Write-Log -ErrorAction SilentlyContinue)) {
         Write-Log $Message
@@ -62,6 +69,7 @@ function Update-Ui {
     $payload = @{}
     if ($Progress -ge 0) { $payload.Progress = [int]$Progress }
     if ($Message) { $payload.Message = $Message }
+    if ($Command) { $payload.Command = $Command }
     if ($payload.Count -eq 0) { return }
     $script:UiHost.Queue.Enqueue([System.Collections.Hashtable]$payload)
 }
@@ -86,7 +94,8 @@ function Stop-InstallUI {
 function Start-UiCore {
     param(
         [System.Collections.Concurrent.ConcurrentQueue[System.Collections.Hashtable]]$Queue,
-        [string]$Title
+        [string]$Title,
+        [string]$MediaRoot
     )
 
     Add-Type -AssemblyName System.Windows.Forms
@@ -100,23 +109,6 @@ function Start-UiCore {
     $Form.ControlBox = $false
     $Form.TopMost = $true
     $Form.BackColor = [System.Drawing.Color]::FromArgb(24, 32, 58)
-    $Form.Add_Paint({
-        param($sender, $e)
-        $rect = [System.Drawing.Rectangle]::FromLTRB(0, 0, $sender.Width, $sender.Height)
-        $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-            $rect,
-            [System.Drawing.Color]::FromArgb(255, 22, 33, 62),
-            [System.Drawing.Color]::FromArgb(255, 46, 78, 129),
-            90
-        )
-        $e.Graphics.FillRectangle($brush, $rect)
-        $brush.Dispose()
-    })
-    $doubleBufferedProp = $Form.GetType().GetProperty(
-        "DoubleBuffered",
-        [System.Reflection.BindingFlags]([System.Reflection.BindingFlags]::NonPublic -bor [System.Reflection.BindingFlags]::Instance)
-    )
-    if ($doubleBufferedProp) { $doubleBufferedProp.SetValue($Form, $true, $null) }
 
     $HeaderLabel = New-Object System.Windows.Forms.Label
     $HeaderLabel.Text = $Title
@@ -204,6 +196,210 @@ function Start-UiCore {
         QuoteElapsedMs = 0
     }
 
+    $MuteButton = New-Object System.Windows.Forms.Button
+    $MuteButton.Location = New-Object System.Drawing.Point(24, 250)
+    $MuteButton.Size = New-Object System.Drawing.Size(150, 32)
+    $MuteButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $MuteButton.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(70, 110, 160)
+    $MuteButton.BackColor = [System.Drawing.Color]::FromArgb(34, 45, 72)
+    $MuteButton.ForeColor = [System.Drawing.Color]::White
+    $MuteButton.UseVisualStyleBackColor = $false
+    $MuteButton.TabStop = $false
+    $MuteButton.Text = "Mute audio"
+    $Form.Controls.Add($MuteButton)
+
+    $script:IntroOverlay = @{
+        Alpha = 255
+        DelayMs = 800
+        Active = $true
+        Panel = $null
+        RequireLoop = $true
+        WaitElapsedMs = 0
+        MaxHoldMs = 6000
+        HoldFadeStep = 12
+        ReleaseFadeStep = 22
+    }
+    $IntroPanel = New-Object System.Windows.Forms.Panel
+    $IntroPanel.Dock = 'Fill'
+    $IntroPanel.Enabled = $false
+    $IntroPanel.BackColor = [System.Drawing.Color]::Transparent
+    $introDoubleBuffered = $IntroPanel.GetType().GetProperty(
+        "DoubleBuffered",
+        [System.Reflection.BindingFlags]([System.Reflection.BindingFlags]::NonPublic -bor [System.Reflection.BindingFlags]::Instance)
+    )
+    if ($introDoubleBuffered) { $introDoubleBuffered.SetValue($IntroPanel, $true, $null) }
+    $IntroPanel.Add_Paint({
+        param($sender,$e)
+        if (-not $script:IntroOverlay -or -not $script:IntroOverlay.Active) { return }
+        $rect = $sender.ClientRectangle
+        $alpha = $script:IntroOverlay.Alpha
+        $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+            $rect,
+            [System.Drawing.Color]::FromArgb($alpha, 15, 32, 65),
+            [System.Drawing.Color]::FromArgb($alpha, 60, 110, 160),
+            90
+        )
+        $e.Graphics.FillRectangle($brush, $rect)
+        $brush.Dispose()
+        $titleFont = New-Object System.Drawing.Font("Segoe UI", 24, [System.Drawing.FontStyle]::Bold)
+        $subtitleFont = New-Object System.Drawing.Font("Segoe UI", 11)
+        $titleBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb([Math]::Min(255, $alpha + 30), 255, 255, 255))
+        $subtitleBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb($alpha, 220, 235, 255))
+        $title = "InstallCraft"
+        $subtitle = "Initiiert Ihre perfekte Installation"
+        $titleSize = $e.Graphics.MeasureString($title, $titleFont)
+        $subtitleSize = $e.Graphics.MeasureString($subtitle, $subtitleFont)
+        $centerX = $rect.Width / 2
+        $centerY = $rect.Height / 2
+        $e.Graphics.DrawString($title, $titleFont, $titleBrush, $centerX - ($titleSize.Width / 2), $centerY - $titleSize.Height)
+        $e.Graphics.DrawString($subtitle, $subtitleFont, $subtitleBrush, $centerX - ($subtitleSize.Width / 2), $centerY + 5)
+        $titleBrush.Dispose(); $subtitleBrush.Dispose(); $titleFont.Dispose(); $subtitleFont.Dispose()
+    })
+    $Form.Controls.Add($IntroPanel)
+    $IntroPanel.BringToFront()
+    $script:IntroOverlay.Panel = $IntroPanel
+
+    $script:UiAudioState = $null
+    $audioTimer = $null
+    $selectNextMusic = {
+        if (-not $script:UiAudioState) { return $null }
+        $tracks = @(Get-ChildItem -Path $script:UiAudioState.MediaRoot -Filter 'PS_Music*.wav' -File -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -ExpandProperty FullName)
+        $script:UiAudioState.MusicTracks = $tracks
+        $shouldReportPair = ($tracks.Count -eq 2 -and -not $script:UiAudioState.ReportedPair)
+        if ($shouldReportPair -and (Get-Command Write-Log -ErrorAction SilentlyContinue)) {
+            $leafs = $tracks | ForEach-Object { Split-Path -Leaf $_ }
+            Write-Log ("Detected 2 PS_Music tracks: {0}" -f ($leafs -join ', '))
+        }
+        $script:UiAudioState.ReportedPair = ($tracks.Count -eq 2)
+        if ($tracks.Count -eq 0) { return $null }
+        $eligible = $tracks
+        if ($tracks.Count -gt 1 -and $script:UiAudioState.LastMusic) {
+            $eligible = $tracks | Where-Object { $_ -ne $script:UiAudioState.LastMusic }
+            if (-not $eligible -or $eligible.Count -eq 0) { $eligible = $tracks }
+        }
+        $selection = Get-Random -InputObject $eligible
+        $script:UiAudioState.LastMusic = $selection
+        return $selection
+    }
+    $startMusicAction = {
+        if (-not $script:UiAudioState -or -not $script:UiAudioState.Controller) { return }
+        $nextTrack = & $selectNextMusic
+        if (-not $nextTrack) {
+            if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+                Write-Log "Unable to find any PS_Music tracks. Stopping audio playback."
+            }
+            & $stopAudioAction
+            return
+        }
+        try { $script:UiAudioState.Controller.controls.stop() } catch {}
+        try {
+            $script:UiAudioState.Controller.settings.setMode("loop", $false)
+            $script:UiAudioState.Controller.URL = $nextTrack
+            $script:UiAudioState.Controller.controls.play()
+            $script:UiAudioState.CurrentTrack = 'Music'
+            $script:UiAudioState.LoopEngaged = $true
+            $script:UiAudioState.LastPlayState = $null
+            if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+                Write-Log ("Now playing {0}" -f (Split-Path -Leaf $nextTrack))
+            }
+        } catch {
+            if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+                Write-Log ("Failed to start {0}: {1}" -f $nextTrack, $_.Exception.Message)
+            }
+        }
+    }
+    $stopAudioAction = {
+        if ($audioTimer) { $audioTimer.Stop(); $audioTimer.Dispose(); $audioTimer = $null }
+        if (-not $script:UiAudioState) { return }
+        if ($script:UiAudioState.Controller) {
+            try { $script:UiAudioState.Controller.controls.stop() } catch {}
+            try { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($script:UiAudioState.Controller) | Out-Null } catch {}
+            $script:UiAudioState.Controller = $null
+        }
+        $script:UiAudioState = $null
+        if ($MuteButton) {
+            $MuteButton.Enabled = $false
+            $MuteButton.Text = "Audio stopped"
+        }
+    }
+
+    if ($MediaRoot -and (Test-Path $MediaRoot)) {
+        $introPath = Join-Path $MediaRoot "UI_Start.wav"
+        $musicTracks = @(Get-ChildItem -Path $MediaRoot -Filter 'PS_Music*.wav' -File -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -ExpandProperty FullName)
+        if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+            switch ($musicTracks.Count) {
+                0 { Write-Log "No PS_Music*.wav tracks found in $MediaRoot" }
+                2 {
+                    $names = $musicTracks | ForEach-Object { Split-Path -Leaf $_ }
+                    Write-Log ("Detected 2 PS_Music tracks: {0}" -f ($names -join ', '))
+                }
+                default { Write-Log ("Detected {0} PS_Music tracks." -f $musicTracks.Count) }
+            }
+        }
+        if ((Test-Path $introPath) -and $musicTracks.Count -gt 0) {
+            try {
+                $controller = New-Object -ComObject WMPlayer.OCX
+                $controller.settings.volume = 75
+                $controller.settings.mute = $false
+                $controller.settings.setMode("loop", $false)
+                $controller.URL = $introPath
+                $script:UiAudioState = @{
+                    Controller = $controller
+                    IntroPath = $introPath
+                    MusicTracks = $musicTracks
+                    CurrentTrack = 'Intro'
+                    IsMuted = $false
+                    LoopEngaged = $false
+                    MediaRoot = $MediaRoot
+                    LastMusic = $null
+                    ReportedPair = ($musicTracks.Count -eq 2)
+                    LastPlayState = $null
+                }
+                $controller.controls.play()
+            } catch {
+                $script:UiAudioState = $null
+            }
+        } elseif (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+            Write-Log "MuSoLIB assets missing in $MediaRoot"
+        }
+    }
+
+    $audioTerminalStates = 0,1,8,10
+    if ($script:UiAudioState) {
+        $audioTimer = New-Object System.Windows.Forms.Timer
+        $audioTimer.Interval = 300
+        $audioTimer.Add_Tick({
+            if (-not $script:UiAudioState -or -not $script:UiAudioState.Controller) { return }
+            $state = $script:UiAudioState.Controller.playState
+            $prev = $script:UiAudioState.LastPlayState
+            if ($null -eq $prev) {
+                $script:UiAudioState.LastPlayState = $state
+                return
+            }
+            $isTerminal = $audioTerminalStates -contains $state
+            $wasTerminal = $audioTerminalStates -contains $prev
+            if ($isTerminal -and -not $wasTerminal -and
+                $script:UiAudioState.CurrentTrack -in @('Intro','Music')) {
+                & $startMusicAction
+            }
+            $script:UiAudioState.LastPlayState = $state
+        })
+        $audioTimer.Start()
+    } else {
+        $MuteButton.Enabled = $false
+        $MuteButton.Text = "Audio unavailable"
+        if ($script:IntroOverlay) { $script:IntroOverlay.RequireLoop = $false }
+    }
+
+    $MuteButton.Add_Click({
+        if (-not $script:UiAudioState -or -not $script:UiAudioState.Controller) { return }
+        $script:UiAudioState.IsMuted = -not $script:UiAudioState.IsMuted
+        $script:UiAudioState.Controller.settings.mute = $script:UiAudioState.IsMuted
+        if (-not $script:UiAudioState.IsMuted -and $script:UiAudioState.CurrentTrack -eq 'Music') {
+            $script:UiAudioState.Controller.controls.play()
+        }
+        $MuteButton.Text = $(if ($script:UiAudioState.IsMuted) { "Unmute audio" } else { "Mute audio" })
+    })
     $SpinnerStates = @('|','/','-','\')
     $ActionHistoryLimit = 200
     $closing = $false
@@ -243,6 +439,43 @@ function Start-UiCore {
                 $SubtitleLabel.Text = $SubtitleQuotes[$state.SubtitleIndex]
             }
         }
+
+        if ($script:IntroOverlay -and $script:IntroOverlay.Active) {
+            if ($script:IntroOverlay.DelayMs -gt 0) {
+                $script:IntroOverlay.DelayMs -= $AnimationTimer.Interval
+            } else {
+                if ($script:IntroOverlay.RequireLoop) {
+                    $script:IntroOverlay.Alpha = [Math]::Max(
+                        0,
+                        $script:IntroOverlay.Alpha - $script:IntroOverlay.HoldFadeStep
+                    )
+                    if ($script:IntroOverlay.Panel) { $script:IntroOverlay.Panel.Invalidate() }
+                    $loopReady = ($script:UiAudioState -and $script:UiAudioState.LoopEngaged)
+                    if ($loopReady) {
+                        $script:IntroOverlay.RequireLoop = $false
+                    } elseif (-not $script:UiAudioState -or
+                             $script:IntroOverlay.WaitElapsedMs -ge $script:IntroOverlay.MaxHoldMs) {
+                        $script:IntroOverlay.RequireLoop = $false
+                    } else {
+                        $script:IntroOverlay.WaitElapsedMs += $AnimationTimer.Interval
+                        return
+                    }
+                }
+                $script:IntroOverlay.Alpha = [Math]::Max(
+                    0,
+                    $script:IntroOverlay.Alpha - $script:IntroOverlay.ReleaseFadeStep
+                )
+                if ($script:IntroOverlay.Panel) { $script:IntroOverlay.Panel.Invalidate() }
+                if ($script:IntroOverlay.Alpha -le 0) {
+                    $script:IntroOverlay.Active = $false
+                    if ($script:IntroOverlay.Panel) {
+                        $script:IntroOverlay.Panel.Hide()
+                        $script:IntroOverlay.Panel.Dispose()
+                        $script:IntroOverlay.Panel = $null
+                    }
+                }
+            }
+        }
     })
     $AnimationTimer.Start()
 
@@ -252,10 +485,6 @@ function Start-UiCore {
         $payload = $null
         while ($Queue.TryDequeue([ref]$payload)) {
             if (-not $payload) { continue }
-            if ($payload.ContainsKey('Command') -and $payload.Command -eq 'Close') {
-                $closing = $true
-                break
-            }
             if ($payload.ContainsKey('Progress') -and $ProgressBar) {
                 $value = [Math]::Max(
                     $ProgressBar.Minimum,
@@ -278,6 +507,16 @@ function Start-UiCore {
                     }
                 }
             }
+            if ($payload.ContainsKey('Command')) {
+                switch ($payload.Command) {
+                    'Close' {
+                        $closing = $true
+                        & $stopAudioAction
+                    }
+                    'StopMusic' { & $stopAudioAction }
+                }
+                if ($closing) { break }
+            }
         }
         if ($closing) {
             $QueueTimer.Stop()
@@ -290,6 +529,11 @@ function Start-UiCore {
     $Form.Add_FormClosed({
         if ($AnimationTimer) { $AnimationTimer.Stop(); $AnimationTimer.Dispose() }
         if ($QueueTimer) { $QueueTimer.Stop(); $QueueTimer.Dispose() }
+        if ($script:IntroOverlay) {
+            if ($script:IntroOverlay.Panel) { $script:IntroOverlay.Panel.Dispose() }
+            $script:IntroOverlay = $null
+        }
+        & $stopAudioAction
     })
 
     $Form.Add_Shown({ $Form.Activate() })

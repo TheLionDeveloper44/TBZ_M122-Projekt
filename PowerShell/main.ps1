@@ -57,7 +57,14 @@ if (-not $InternetAvailable) {
 
 if ($IsAdmin) {
     Write-Log "Launching enhanced installation UI."
-    Start-InstallUI -Title "InstallCraft - The Ultimate Installer"
+    $MuSoLibDir = Join-Path (Split-Path -Parent $ScriptDir) "MuSoLIB"
+    if (Test-Path $MuSoLibDir) {
+        Write-Log "MuSoLIB audio directory found at $MuSoLibDir"
+    } else {
+        Write-Log "MuSoLIB audio directory missing at $MuSoLibDir"
+        $MuSoLibDir = $null
+    }
+    Start-InstallUI -Title "InstallCraft - The Ultimate Installer" -MediaRoot $MuSoLibDir
     Update-Ui -Progress 5 -Message "Initialising Oberfläche"
 
     # Get the script directory and set paths
@@ -232,7 +239,7 @@ if ($IsAdmin) {
     & $PythonExePath -m pip install PySide6 --target $PyQtDir
     Write-Log "PySide6 installed into $PyQtDir"
 
-    Update-Ui -Progress 100 -Message "Installation completed."
+    Update-Ui -Progress 100 -Message "Installation completed." -Command "StopMusic"
     Start-Sleep -Seconds 2
 
     # ensure UI stopped and disposed
