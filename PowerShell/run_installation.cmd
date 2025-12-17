@@ -15,5 +15,5 @@ if %errorLevel% == 0 (
 
 :: Run the main script with admin privileges, if elevated
 :admin
-powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized -STA -File "%SCRIPT_DIR%main.ps1" %*
+powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized -STA -File "%SCRIPT_DIR%main_runinstaller.ps1" %*
 exit /b %ERRORLEVEL%

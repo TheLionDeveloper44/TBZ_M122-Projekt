@@ -18,7 +18,7 @@ Installationsschritte:
 1. Neustes Release von diesem GitHub herunterladen
 2. ZIP File extrahieren
 3. Alle inkludierten Files in einer sinnvollen Struktur reintun und nicht (z.B direkt unter Downloads beim User)
-4. Im Ordner "PowerShell" ist *run.cmd* zu finden. Dieses Skript startet die installation des Projektes. Es *MUSS* als Administrator ausgeführt werden. Der Skript wird auch darauf hinweisen, falls man es vergisst.
+4. Im Ordner "PowerShell" ist *run_installation.cmd* zu finden. Dieses Skript startet die installation des Projektes. Es *MUSS* als Administrator ausgeführt werden. Der Skript wird auch darauf hinweisen, falls man es vergisst.
 5. Fertig! Den restlichen Teil erledigt der Skript selber.
 
 # ⚠️ ACHTUNG

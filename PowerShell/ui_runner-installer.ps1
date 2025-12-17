@@ -189,9 +189,9 @@ function Start-UiCore {
     $Form.Controls.Add($ActionListBox)
 
     $SubtitleQuotes = @(
-        "Lehnen Sie sich zurück, während wir die Magie entfalten..."
-        "Wir richten Ihren Computer mit höchster Präzision ein."
-        "Ein Augenblick Geduld, wir kümmern uns um die Details."
+        "Lehnen Sie sich zurueck, während wir die Magie entfalten..."
+        "Wir richten Ihren Computer mit hoechster Praezision ein."
+        "Ein Augenblick Geduld, wir kuemmern uns um die Details."
         "Ihre Tools werden vorbereitet, bitte entspannen Sie sich."
         "InstallCraft liefert gleich die perfekte Erfahrung."
     )
