@@ -5,4 +5,4 @@
 # Zeige eine Fehlermeldung an, wenn das Skript nicht als Administrator ausgeführt wird.
 
 Add-Type -AssemblyName System.Windows.Forms
-[System.Windows.Forms.MessageBox]::Show("You haven't run the run.cmd command as Administrator. Stopping the Installation", "Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+[System.Windows.Forms.MessageBox]::Show("You haven't ran the run_installation.cmd Script as an Administrator. Stopping the Installation", "Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)

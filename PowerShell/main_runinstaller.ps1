@@ -140,6 +140,29 @@ function Close-UiStartupSplash {
     try { $Form.Close() } catch {}
     $Form.Dispose()
 }
+function Get-FirstExistingPath {
+    param([string[]]$Candidates)
+    foreach ($candidate in $Candidates) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path $candidate)) {
+            return $candidate
+        }
+    }
+    return $null
+}
+function Set-PythonFileAssociations {
+    param(
+        [Parameter(Mandatory)][string]$PyLauncherPath,
+        [Parameter(Mandatory)][string]$PywLauncherPath
+    )
+    if (-not (Test-Path $PyLauncherPath)) { throw "py.exe not found at $PyLauncherPath" }
+    if (-not (Test-Path $PywLauncherPath)) { throw "pyw.exe not found at $PywLauncherPath" }
+    Write-Log "Configuring .py association to $PyLauncherPath"
+    & cmd.exe /c "assoc .py=Python.File" | Out-Null
+    & cmd.exe /c ("ftype Python.File=`"{0}`" `"%1`" %*" -f $PyLauncherPath) | Out-Null
+    Write-Log "Configuring .pyw association to $PywLauncherPath"
+    & cmd.exe /c "assoc .pyw=Python.NoConFile" | Out-Null
+    & cmd.exe /c ("ftype Python.NoConFile=`"{0}`" `"%1`" %*" -f $PywLauncherPath) | Out-Null
+}
 
 Write-Log "----- Installer run started. Admin rights: $IsAdmin -----"
 
@@ -260,6 +283,7 @@ if ($IsAdmin) {
         Update-Ui -Progress 10 -Message "Checking Python installation"
         $PythonInstalled = $false
         $PythonExePath = $null
+        $PythonwExePath = $null
         [version]$PythonVersion = $null
         try {
             $output = & python --version 2>$null
@@ -269,6 +293,8 @@ if ($IsAdmin) {
                 }
                 $PythonInstalled = $true
                 $PythonExePath = (Get-Command python).Source
+                $PythonDirPath = Split-Path $PythonExePath
+                $PythonwExePath = Join-Path $PythonDirPath 'pythonw.exe'
             }
         } catch {
             $PythonInstalled = $false
@@ -308,6 +334,7 @@ if ($IsAdmin) {
 
             $PythonExePath = Join-Path $PythonPrefix "python.exe"
             $PythonDirPath = Split-Path $PythonExePath
+            $PythonwExePath = Join-Path $PythonPrefix "pythonw.exe"
             Write-Log "Python executable resolved at $PythonExePath"
 
             $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
@@ -342,30 +369,47 @@ if ($IsAdmin) {
             Start-Sleep -Seconds 2
         }
 
-        # Create Modules directory (for both cases)
-        $ModulesDir = Join-Path $ApplicationsDir "Modules"
-        if (!(Test-Path $ModulesDir)) {
-            New-Item -ItemType Directory -Path $ModulesDir -Force | Out-Null
-            Write-Log "Created Modules directory at $ModulesDir"
-        } else {
-            Write-Log "Modules directory already present at $ModulesDir"
-        }
-
-        # Create PyQt directory
-        $PyQtDir = Join-Path $ModulesDir "PyQt"
-        if (!(Test-Path $PyQtDir)) {
-            New-Item -ItemType Directory -Path $PyQtDir -Force | Out-Null
-            Write-Log "Created PyQt directory at $PyQtDir"
-        } else {
-            Write-Log "PyQt directory already present at $PyQtDir"
-        }
-
-        Update-Ui -Progress 85 -Message "Installing PyQt/PySide6..."
+        Update-Ui -Progress 85 -Message "Installing PySide6"
         Invoke-UiPump
         & $PythonExePath -m pip install --upgrade pip
         Write-Log "pip upgraded via $PythonExePath"
-        & $PythonExePath -m pip install PySide6 --target $PyQtDir
-        Write-Log "PySide6 installed into $PyQtDir"
+        & $PythonExePath -m pip install PySide6
+        Write-Log "PySide6 installed globally via pip"
+
+        Update-Ui -Progress 90 -Message "Configuring Python file associations"
+        Invoke-UiPump
+        try {
+            $PyLauncherCandidates = @()
+            $pyCmd = Get-Command py.exe -ErrorAction SilentlyContinue
+            if ($pyCmd) { $PyLauncherCandidates += $pyCmd.Source }
+            $PyLauncherCandidates += (Join-Path $env:WINDIR 'py.exe')
+            if ($PythonDirPath) { $PyLauncherCandidates += (Join-Path $PythonDirPath 'py.exe') }
+            $PyLauncherPath = Get-FirstExistingPath -Candidates $PyLauncherCandidates
+            if (-not $PyLauncherPath -and $PythonExePath) {
+                $PyLauncherPath = Join-Path $PythonDirPath 'py.exe'
+                Copy-Item -Path $PythonExePath -Destination $PyLauncherPath -Force
+                Write-Log "py.exe shim created at $PyLauncherPath"
+            }
+
+            $PywLauncherCandidates = @()
+            $pywCmd = Get-Command pyw.exe -ErrorAction SilentlyContinue
+            if ($pywCmd) { $PywLauncherCandidates += $pywCmd.Source }
+            $PywLauncherCandidates += (Join-Path $env:WINDIR 'pyw.exe')
+            if ($PythonDirPath) { $PywLauncherCandidates += (Join-Path $PythonDirPath 'pyw.exe') }
+            $PywLauncherPath = Get-FirstExistingPath -Candidates $PywLauncherCandidates
+            if (-not $PywLauncherPath -and $PythonwExePath -and (Test-Path $PythonwExePath)) {
+                $PywLauncherPath = Join-Path $PythonDirPath 'pyw.exe'
+                Copy-Item -Path $PythonwExePath -Destination $PywLauncherPath -Force
+                Write-Log "pyw.exe shim created at $PywLauncherPath"
+            }
+
+            if (-not (Test-Path $PyLauncherPath)) { throw "py.exe launcher not found." }
+            if (-not (Test-Path $PywLauncherPath)) { throw "pyw.exe launcher not found." }
+
+            Set-PythonFileAssociations -PyLauncherPath $PyLauncherPath -PywLauncherPath $PywLauncherPath
+        } catch {
+            Show-FatalError -Message ("Failed to configure Python file associations: {0}" -f $_.Exception.Message)
+        }
 
         Update-Ui -Progress 100 -Message "Installation completed." -Command "StopMusic"
         Start-Sleep -Seconds 2

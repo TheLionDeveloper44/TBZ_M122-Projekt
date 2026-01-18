@@ -21,6 +21,12 @@ Installationsschritte:
 4. Im Ordner "PowerShell" ist *run_installation.cmd* zu finden. Dieses Skript startet die installation des Projektes. Es *MUSS* als Administrator ausgeführt werden. Der Skript wird auch darauf hinweisen, falls man es vergisst.
 5. Fertig! Den restlichen Teil erledigt der Skript selber.
 
+# Ausführung
+Im ZIP-File befindet sich ein "Python Scripts" Ordner. Diesen können sie beliebig extrahieren und dann mit "run.py" ausführen.
+"run.py" führt den App Manager aus, wo man dann selber Apps installieren kann!
+
+Das GUI wurde extra selbsterklärend erstellt, also sollten Sie das einfach rausfinden können, wie man die Applikation gebrauchen kann.
+
 # ⚠️ ACHTUNG
 Dieses Skript kann Fehler enthalten und wird ohne jede Gewährleistung bereitgestellt.  
 Der Urheber dieses GitHub-Repositories übernimmt keinerlei Haftung für Schäden,  

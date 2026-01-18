@@ -1,6 +1,4 @@
-:: Author: TheLionDeveloper44
-:: Dieses Skript unterliegt der Lizenz, die in der LICENSE-Datei im Stammverzeichnis dieses Repositories enthalten ist.
-:: Ohne ausdrückliche schriftliche Genehmigung ist es untersagt, dieses Skript zu kopieren, zu modifizieren oder zu verbreiten.
+:: DO NOT RUN THIS SCRIPT. THIS IS A TESTING COPY OF "run_installation.cmd".
 
 @echo off
 setlocal
@@ -19,5 +17,5 @@ if %errorLevel% == 0 (
 
 :: Run the main script with admin privileges, if elevated
 :admin
-powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized -STA -File "%SCRIPT_DIR%main_runinstaller.ps1" %*
+powershell -NoProfile -ExecutionPolicy Bypass -STA -File "%SCRIPT_DIR%main_runinstaller.ps1" %*
 exit /b %ERRORLEVEL%
