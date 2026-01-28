@@ -1,3 +1,5 @@
+# Dieses Projekt wird nicht mehr gewartet und wurde archiviert
+
 # Einleitung
 Persönliches Projekt für die Technische Berufsschule Zürich, Modul 122. Dieses Projekt beinhaltet Inhalte für das zweite Block (Projektteil).
 
